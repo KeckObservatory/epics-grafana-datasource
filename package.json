@@ -16,8 +16,5 @@
     "@grafana/runtime": "7.0.1",
     "@grafana/ui": "7.0.1",
     "@types/lodash": "latest"
-  },
-  "engines": {
-    "node": ">=12 <13"
   }
 }

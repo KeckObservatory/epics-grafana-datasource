@@ -1,9 +1,9 @@
 import { DataSourceInstanceSettings } from '@grafana/data';
 import { DataSourceWithBackend } from '@grafana/runtime';
-import { MyDataSourceOptions, MyQuery } from './types';
+import { EPICSDataSourceOptions, EPICSQuery } from './types';
 
-export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
-  constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
+export class DataSource extends DataSourceWithBackend<EPICSQuery, EPICSDataSourceOptions> {
+  constructor(instanceSettings: DataSourceInstanceSettings<EPICSDataSourceOptions>) {
     super(instanceSettings);
   }
 }

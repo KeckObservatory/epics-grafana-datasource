@@ -15,5 +15,7 @@ export const defaultQuery: Partial<EPICSQuery> = {
  * These are options configured for each DataSource instance
  */
 export interface EPICSDataSourceOptions extends DataSourceJsonData {
-  path?: string;
+  server: string;
+  managePort: string;
+  dataPort: string;
 }

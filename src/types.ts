@@ -3,6 +3,7 @@ import { DataQuery, DataSourceJsonData } from '@grafana/data';
 export interface EPICSQuery extends DataQuery {
   queryText: string;
   system: string;
+  channel: string;
   unitConversion: number;
   transform: number;
 }

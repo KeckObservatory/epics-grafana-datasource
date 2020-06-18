@@ -12,4 +12,10 @@ export class DataSource extends DataSourceWithBackend<EPICSQuery, EPICSDataSourc
       systems ? Object.entries(systems).map(([value, label]) => ({ label, value } as SelectableValue<string>)) : []
     );
   }
+
+  async getChannels(system: string): Promise<Array<SelectableValue<string>>> {
+    return this.getResource('channels', { system: system }).then(({ channels }) =>
+      channels ? Object.entries(channels).map(([value, label]) => ({ label, value } as SelectableValue<string>)) : []
+    );
+  }
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
@@ -318,39 +319,45 @@ func (ds *EPICSDatasource) handleResourceChannels(rw http.ResponseWriter, req *h
 	// Retrieve the channels for a given system
 	if strings.HasPrefix(req.URL.String(), "/channels") {
 
-		/*
+		// The only parameter expected to come in is the one indicating for which system to filter the channels by
+		params, err := url.ParseQuery(req.URL.RawQuery)
+		if err != nil {
+			log.DefaultLogger.Error(fl() + "channels URL error: " + err.Error())
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		system := params.Get("system")
 
-		   // The only parameter expected to come in is the one indicating for which system to filter on when returning channels
-		   service := strings.Split(req.URL.RawQuery, "=")[1]
+		// Get the channels list fresh from the archiver (again)
+		var allchannels []string
+		var message string
+		allchannels, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort)
 
-		   // TODO - Get the channels list, either cached or w/e
+		if err != nil {
+			log.DefaultLogger.Error(fl() + "channels retrieve error: " + message)
+			writeResult(rw, "?", nil, err)
+			return
+		}
 
+		// Prepare a container to send back to the caller
+		channels := map[string]string{}
 
-		   // Prepare a container to send back to the caller
-		   channels := map[string]string{}
+		// Iterate the allchannels list and filter it down, based on the specified system name
+		for i := 0; i < len(allchannels); i++ {
 
-		   // Iterate the service list and add to the return array
-		   var channel string
-		   for rows.Next() {
-		     err = rows.Scan(&keyword)
-		     if err != nil {
-		       log.DefaultLogger.Error(fl() + "keywords scan error")
-		       writeResult(rw, "?", nil, err)
-		     }
+			channel := allchannels[i]
 
-		     // Make a key-value pair for Grafana to use, the key is the bare channel name and the display value (could be different later)
-		     channels[channel] = channel
-		   }
+			if strings.Contains(channel, system) {
+				channels[channel] = channel
+			}
+		}
 
-
-		   writeResult(rw, "channels", channels, err)
-
-		*/
+		writeResult(rw, "channels", channels, err)
 
 	} else if strings.HasPrefix(req.URL.String(), "/systems") {
 		// Create a systems list based on the list of channels
 
-		// Get the channels as a test of the archiver connection
+		// Get the channels list fresh from the archiver
 		var channels []string
 		var message string
 		channels, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort)
@@ -358,25 +365,38 @@ func (ds *EPICSDatasource) handleResourceChannels(rw http.ResponseWriter, req *h
 		if err != nil {
 			log.DefaultLogger.Error(fl() + "systems retrieve error: " + message)
 			writeResult(rw, "?", nil, err)
+			return
 		}
 
 		// Prepare a container to send back to the caller
 		systems := map[string]string{}
 
-		// Iterate the service list and add to the return array
-		var system string
-		var i int
+		// Always provide an empty string for "clearing" the selection
+		systems[""] = "(none)"
 
-		//for i = 0; i < len(channels); i++ {
-		for i = 0; i < 10; i++ {
-			system = channels[i]
-			// Make a key-value pair for Grafana to use but the key and the value end up being the same (is this lazy?)
-			systems[system] = system
+		// Iterate the channels list and determine what the system prefixes are
+		for i := 0; i < len(channels); i++ {
 
+			channel := channels[i]
+			segs := strings.Split(channel, ":")
+
+			// Categorize channels with 3 parts (k0:met:primtemp) as the first two segments (k0:met)
+			// Categorize channels with 4 parts (k1:dcs:axe:az) as the first three segments (k1:dcs:axe)
+			if len(segs) == 3 || len(segs) == 4 {
+				system := strings.Join(segs[:len(segs)-1], ":") + ":"
+				systems[system] = system
+			}
 		}
 
 		writeResult(rw, "systems", systems, err)
+		return
 
+	} else {
+
+		// If we got this far, it was a bogus request
+		log.DefaultLogger.Error(fl() + "invalid request string")
+		writeResult(rw, "?", nil, err)
+		return
 	}
 }
 

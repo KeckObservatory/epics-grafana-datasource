@@ -1,7 +1,7 @@
 import defaults from 'lodash/defaults';
 
 import React, { PureComponent } from 'react';
-import { InlineFormLabel, SegmentAsync } from '@grafana/ui';
+import { InlineFormLabel, SegmentAsync, Select } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from './DataSource';
 import { defaultQuery, EPICSDataSourceOptions, EPICSQuery } from './types';
@@ -30,7 +30,7 @@ export class QueryEditor extends PureComponent<Props> {
   };
 
   unitConversionOptions = [
-    { label: 'none', value: 0 },
+    { label: '(none)', value: 0 },
     { label: 'degrees to radians', value: 1 },
     { label: 'radians to degrees', value: 2 },
     { label: 'radians to arcseconds', value: 3 },
@@ -45,7 +45,7 @@ export class QueryEditor extends PureComponent<Props> {
   };
 
   transformOptions = [
-    { label: 'none', value: 0 },
+    { label: '(none)', value: 0 },
     { label: '1st derivative (no rounding)', value: 1 },
     { label: '1st derivative (1Hz rounding)', value: 2 },
     { label: '1st derivative (10Hz rounding)', value: 3 },
@@ -72,7 +72,7 @@ export class QueryEditor extends PureComponent<Props> {
             className="query-system"
             tooltip={
               <p>
-                Optional: filter by <code>system</code> or pattern.
+                Optional: filter by system.
               </p>
             }
           >
@@ -92,7 +92,7 @@ export class QueryEditor extends PureComponent<Props> {
             className="query-channels"
             tooltip={
               <p>
-                Select an EPICS <code>channel</code>.
+                Select an EPICS channel.
               </p>
             }
           >
@@ -105,6 +105,34 @@ export class QueryEditor extends PureComponent<Props> {
             allowCustomValue={false}
             onChange={this.onChannelChange}
           ></SegmentAsync>
+        </div>
+        <div className="gf-form-inline">
+          <InlineFormLabel width={10} className="convert-units" tooltip={<p>Convert units.</p>}>
+            Units conversion
+          </InlineFormLabel>
+          <Select
+            width={30}
+            placeholder={'(none)'}
+            defaultValue={0}
+            options={this.unitConversionOptions}
+            value={query.unitConversion}
+            allowCustomValue={false}
+            onChange={this.onUnitConversionChange}
+          />
+        </div>
+        <div className="gf-form-inline">
+          <InlineFormLabel width={10} className="transform" tooltip={<p>Transform data.</p>}>
+            Transform
+          </InlineFormLabel>
+          <Select
+            width={30}
+            placeholder={'(none)'}
+            defaultValue={0}
+            options={this.transformOptions}
+            value={query.transform}
+            allowCustomValue={false}
+            onChange={this.onTransformChange}
+          />
         </div>
       </>
     );

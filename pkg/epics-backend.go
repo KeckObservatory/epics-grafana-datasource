@@ -121,9 +121,16 @@ func (ds *EPICSDatasource) QueryData(ctx context.Context, req *backend.QueryData
 	// create response struct
 	response := backend.NewQueryDataResponse()
 
+	// Get the configuration
+	config, err := LoadSettings(req.PluginContext)
+	if err != nil {
+		log.DefaultLogger.Error(fl() + "settings load error")
+		return nil, err
+	}
+
 	// loop over queries and execute them individually.
 	for _, q := range req.Queries {
-		res := ds.query(ctx, q)
+		res := ds.query(ctx, q, config.Server, config.DataPort)
 
 		// save the response in a hashmap
 		// based on with RefID as identifier
@@ -146,14 +153,43 @@ type queryModel struct {
 	RefId          string `json:"refId"`
 }
 
-func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery) backend.DataResponse {
+// Structure obtained with https://github.com/bashtian/jsonutils
+type PVData []struct {
+	Data []struct {
+		Nanos    int64   `json:"nanos"`
+		Secs     int64   `json:"secs"`
+		Severity int64   `json:"severity"`
+		Status   int64   `json:"status"`
+		Val      float64 `json:"val"`
+	} `json:"data"`
+	Meta struct {
+		PREC int64  `json:"PREC,string"`
+		Name string `json:"name"`
+	} `json:"meta"`
+}
+
+func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, server string, dataport string) backend.DataResponse {
+
 	// Unmarshal the json into our queryModel
 	var qm queryModel
 
 	response := backend.DataResponse{}
 
+	// Return an error if the unmarshal fails
 	response.Error = json.Unmarshal(query.JSON, &qm)
 	if response.Error != nil {
+		return response
+	}
+
+	// Create an empty data frame response and add time dimension
+	empty_frame := data.NewFrame("response")
+	empty_frame.Fields = append(empty_frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
+
+	// Return empty frame if query is empty
+	if qm.QueryText == "" {
+
+		// add the frames to the response
+		response.Frames = append(response.Frames, empty_frame)
 		return response
 	}
 
@@ -162,23 +198,176 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery) b
 		log.DefaultLogger.Warn("format is empty. defaulting to time series")
 	}
 
-	// create data frame response
+	// Channel is the query text
+	channel := qm.QueryText
+
+	// Ask the archive server to perform binning based on the length of time requested
+
+	// The EPICS Archiver will bin the data into arbitrary sized groups, taking the first or last
+	// sample as the representative value in the bin.  Start to bin the data when the data source
+	// request is larger than 30 minutes.
+	// https://slacmshankar.github.io/epicsarchiver_docs/userguide.html
+	//
+	// Use the Grafana panel request and MaxDataPoints to generate appropriate sized bins.
+	//
+	//  Request Bin size          Param to send
+	// <10m     do not bin
+	//  30m     5 second bins     lastSample_5
+	//   4h     15 second bins    lastSample_15
+	//   8h     30 second bins    lastSample_30
+	//   1d     2 minute bins     lastSample_120
+	//   2d     3 minute bins     lastSample_180
+	//   1w     10 minute bins    lastSample_600
+	//   2w     20 minute bins    lastSample_1200
+	//   1M     1 hour bins       lastSample_3600
+	//   6M     4 hour bins       lastSample_14400
+	//   1Y>    12 hour bins      lastSample_43200
+
+	// setSamplingOption does the same and interpolates for other time ranges
+
+	// How long is the requested time range?
+	ranget := query.TimeRange.To.Sub(query.TimeRange.From).Minutes()
+
+	// Calculate how many minutes are in the above ranges
+	const minutes10 = 10.0
+	const hoursHalf = 30.0
+	const hours4 = 60.0 * 4
+	const hours8 = 60.0 * 8
+	const hoursDay = 60.0 * 24
+	const hours2Days = hoursDay * 2
+	const hoursWeek = hoursDay * 7
+	const hours2Weeks = hoursWeek * 2
+	const hoursMonth = hoursWeek * 4 // Close enough
+	const hours6Month = hoursMonth * 6
+	const hoursYear = hoursDay * 365
+
+	var sampleRate int
+
+	if ranget <= minutes10 {
+		sampleRate = 0
+	} else if ranget <= hoursHalf {
+		sampleRate = 5
+	} else if ranget <= hours4 {
+		sampleRate = 15
+	} else if ranget <= hours8 {
+		sampleRate = 30
+	} else if ranget <= hoursDay {
+		sampleRate = 120
+	} else if ranget <= hours2Days {
+		sampleRate = 180
+	} else if ranget <= hoursWeek {
+		sampleRate = 600
+	} else if ranget <= hours2Weeks {
+		sampleRate = 1200
+	} else if ranget <= hoursMonth {
+		sampleRate = 3600
+	} else if ranget <= hours6Month {
+		sampleRate = 14400
+	} else if ranget <= hoursYear {
+		sampleRate = 43200
+	} else {
+		// Else same as 1 year
+		sampleRate = 43200
+	}
+
+	log.DefaultLogger.Debug(fmt.Sprintf("ranget = %f  sampleRate = %d  MaxDataPoints = %d", ranget, sampleRate, query.MaxDataPoints))
+
+	// URL encode the params
+	params := url.Values{}
+	params.Add("from", query.TimeRange.From.Format(time.RFC3339))
+	params.Add("to", query.TimeRange.To.Format(time.RFC3339))
+
+	if sampleRate > 0 {
+		params.Add("pv", fmt.Sprintf("lastSample_%d(%s)", sampleRate, channel))
+	} else {
+		// Retrieve the data, unbinned
+		params.Add("pv", channel)
+	}
+
+	// Generate a URL to query for the channel data
+	getdataurl := fmt.Sprintf("http://%s:%s/retrieval/data/getData.json?%s", server, dataport, params.Encode())
+
+	// Give the archiver 1 minute to reply
+	client := http.Client{Timeout: time.Second * 60}
+
+	httpreq, err := http.NewRequest(http.MethodGet, getdataurl, nil)
+	if err != nil {
+		// Send back an empty frame, the query failed in some way
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = err
+		return response
+	}
+
+	// Retrieve the channel data
+	res, err := client.Do(httpreq)
+	if err != nil {
+		// Send back an empty frame, the query failed in some way
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = err
+		return response
+	}
+
+	// Pull the body out of the response
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		// Send back an empty frame, the query failed in some way
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = err
+		return response
+	}
+
+	// Init a container for the raw data points
+	var pvdata PVData
+
+	// Decode the body
+	err = json.Unmarshal(body, &pvdata)
+	if err != nil {
+		// Send back an empty frame, the query failed in some way
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = err
+		return response
+	}
+
+	// Determine how many points came back
+	var count int
+	for _, pvdataset := range pvdata {
+		count += len(pvdataset.Data)
+	}
+
+	// Store times and values here before building the response
+	times := make([]time.Time, count)
+	values := make([]float64, count)
+
+	// Temporary variables for conversions/transforms
+	//var timetemp float64
+	//var valtemp, val float64
+	var i int32
+
+	for _, pvdataset := range pvdata {
+		for _, pvdatarow := range pvdataset.Data {
+			values[i] = pvdatarow.Val
+			times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
+			i++
+		}
+	}
+
+	// Start a new frame and add the times + values
 	frame := data.NewFrame("response")
+	frame.RefID = qm.RefId
+	frame.Name = qm.QueryText
 
-	// add the time dimension
-	frame.Fields = append(frame.Fields,
-		data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}),
-	)
-
-	// add values
-	frame.Fields = append(frame.Fields,
-		data.NewField("values", nil, []int64{10, 20}),
-	)
+	// It looks like you can submit the values with any string for a name, which will be appended to the
+	// .Name field above (thus creating a series named "service.KEYWORD values" which may not be the desired
+	// name for the series.  Thus, submit it with an empty string for now which appears to work.
+	//frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+	frame.Fields = append(frame.Fields, data.NewField("", nil, values))
+	frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
 
 	// add the frames to the response
 	response.Frames = append(response.Frames, frame)
 
 	return response
+
 }
 
 type pv struct {

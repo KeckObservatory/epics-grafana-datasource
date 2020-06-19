@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -130,7 +131,7 @@ func (ds *EPICSDatasource) QueryData(ctx context.Context, req *backend.QueryData
 
 	// loop over queries and execute them individually.
 	for _, q := range req.Queries {
-		res := ds.query(ctx, q, config.Server, config.DataPort)
+		res := ds.query(ctx, q, config.Server, config.ManagePort, config.DataPort)
 
 		// save the response in a hashmap
 		// based on with RefID as identifier
@@ -168,7 +169,7 @@ type PVData []struct {
 	} `json:"meta"`
 }
 
-func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, server string, dataport string) backend.DataResponse {
+func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, server string, manageport string, dataport string) backend.DataResponse {
 
 	// Unmarshal the json into our queryModel
 	var qm queryModel
@@ -201,81 +202,36 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 	// Channel is the query text
 	channel := qm.QueryText
 
-	// Ask the archive server to perform binning based on the length of time requested
-
-	// The EPICS Archiver will bin the data into arbitrary sized groups, taking the first or last
-	// sample as the representative value in the bin.  Start to bin the data when the data source
-	// request is larger than 30 minutes.
+	// The EPICS Archiver can bin the data for us into slices of 1 or more seconds.
 	// https://slacmshankar.github.io/epicsarchiver_docs/userguide.html
 	//
-	// Use the Grafana panel request and MaxDataPoints to generate appropriate sized bins.
-	//
-	//  Request Bin size          Param to send
-	// <10m     do not bin
-	//  30m     5 second bins     lastSample_5
-	//   4h     15 second bins    lastSample_15
-	//   8h     30 second bins    lastSample_30
-	//   1d     2 minute bins     lastSample_120
-	//   2d     3 minute bins     lastSample_180
-	//   1w     10 minute bins    lastSample_600
-	//   2w     20 minute bins    lastSample_1200
-	//   1M     1 hour bins       lastSample_3600
-	//   6M     4 hour bins       lastSample_14400
-	//   1Y>    12 hour bins      lastSample_43200
-
-	// setSamplingOption does the same and interpolates for other time ranges
+	// If the number of seconds in the query is less than the max amount of data Grafana wants back, we have
+	// to bin it ourselves with a smaller interval than 1 second.
 
 	// How long is the requested time range?
-	ranget := query.TimeRange.To.Sub(query.TimeRange.From).Minutes()
+	querylength := query.TimeRange.To.Sub(query.TimeRange.From).Seconds()
 
-	// Calculate how many minutes are in the above ranges
-	const minutes10 = 10.0
-	const hoursHalf = 30.0
-	const hours4 = 60.0 * 4
-	const hours8 = 60.0 * 8
-	const hoursDay = 60.0 * 24
-	const hours2Days = hoursDay * 2
-	const hoursWeek = hoursDay * 7
-	const hours2Weeks = hoursWeek * 2
-	const hoursMonth = hoursWeek * 4 // Close enough
-	const hours6Month = hoursMonth * 6
-	const hoursYear = hoursDay * 365
+	// If the number of seconds in the query is larger than the max requested data points, we can calculate 1 second
+	// bins by using ratio of the query time to the max data points.
+	binsize := math.Floor(querylength / float64(query.MaxDataPoints))
 
-	var sampleRate int
+	var sampleRate int64
 
-	if ranget <= minutes10 {
+	// Do our own binning if we have to, for now just return the raw data and let the browser deal with it
+	if binsize < 1 {
+		// TODO - This is where we will bin it ourselves
 		sampleRate = 0
-	} else if ranget <= hoursHalf {
-		sampleRate = 5
-	} else if ranget <= hours4 {
-		sampleRate = 15
-	} else if ranget <= hours8 {
-		sampleRate = 30
-	} else if ranget <= hoursDay {
-		sampleRate = 120
-	} else if ranget <= hours2Days {
-		sampleRate = 180
-	} else if ranget <= hoursWeek {
-		sampleRate = 600
-	} else if ranget <= hours2Weeks {
-		sampleRate = 1200
-	} else if ranget <= hoursMonth {
-		sampleRate = 3600
-	} else if ranget <= hours6Month {
-		sampleRate = 14400
-	} else if ranget <= hoursYear {
-		sampleRate = 43200
 	} else {
-		// Else same as 1 year
-		sampleRate = 43200
+		// Else tell the archiver to do it for us
+		sampleRate = int64(binsize)
 	}
 
-	log.DefaultLogger.Debug(fmt.Sprintf("ranget = %f  sampleRate = %d  MaxDataPoints = %d", ranget, sampleRate, query.MaxDataPoints))
+	log.DefaultLogger.Debug(fmt.Sprintf("querylength = %f  sampleRate = %d  MaxDataPoints = %d", querylength, sampleRate, query.MaxDataPoints))
 
 	// URL encode the params
 	params := url.Values{}
-	params.Add("from", query.TimeRange.From.Format(time.RFC3339))
-	params.Add("to", query.TimeRange.To.Format(time.RFC3339))
+	params.Add("from", query.TimeRange.From.Format(time.RFC3339Nano))
+	params.Add("to", query.TimeRange.To.Format(time.RFC3339Nano))
 
 	if sampleRate > 0 {
 		params.Add("pv", fmt.Sprintf("lastSample_%d(%s)", sampleRate, channel))
@@ -286,16 +242,13 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 	// Generate a URL to query for the channel data
 	getdataurl := fmt.Sprintf("http://%s:%s/retrieval/data/getData.json?%s", server, dataport, params.Encode())
+	log.DefaultLogger.Debug(fmt.Sprintf("Archiver URL = %s", getdataurl))
 
 	// Give the archiver 1 minute to reply
 	client := http.Client{Timeout: time.Second * 60}
 
 	httpreq, err := http.NewRequest(http.MethodGet, getdataurl, nil)
 	if err != nil {
-		// Send back an empty frame, the query failed in some way
-		response.Frames = append(response.Frames, empty_frame)
-		response.Error = err
-		return response
 	}
 
 	// Retrieve the channel data
@@ -334,6 +287,8 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 		count += len(pvdataset.Data)
 	}
 
+	log.DefaultLogger.Debug(fmt.Sprintf("Returning %d data points", count))
+
 	// Store times and values here before building the response
 	times := make([]time.Time, count)
 	values := make([]float64, count)
@@ -370,64 +325,77 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 }
 
-type pv struct {
-	LastRotateLogs             string `lastRotateLogs:"string"`
-	Appliance                  string `appliance:"string"`
-	PvName                     string `pvName:"string"`
-	PvNameOnly                 string `pvNameOnly:"string"`
-	ConnectionState            string `connectionState:"string"`
-	LastEvent                  string `lastEvent:"string"`
-	SamplingPeriod             string `samplingPeriod:"string"`
-	IsMonitored                string `isMonitored:"string"`
-	ConnectionLastRestablished string `connectionLastRestablished:"string"`
-	ConnectionFirstEstablished string `connectionFirstEstablished:"string"`
-	ConnectionLossRegainCount  string `connectionLossRegainCount:"string"`
-	Status                     string `status:"string"`
+type GetPVStatus []struct {
+	Appliance                  string  `json:"appliance"`
+	ConnectionFirstEstablished string  `json:"connectionFirstEstablished"`
+	ConnectionLastRestablished string  `json:"connectionLastRestablished"`
+	ConnectionLossRegainCount  int64   `json:"connectionLossRegainCount,string"`
+	ConnectionState            bool    `json:"connectionState,string"`
+	IsMonitored                bool    `json:"isMonitored,string"`
+	LastEvent                  string  `json:"lastEvent"`
+	LastRotateLogs             string  `json:"lastRotateLogs"`
+	PvName                     string  `json:"pvName"`
+	PvNameOnly                 string  `json:"pvNameOnly"`
+	SamplingPeriod             float64 `json:"samplingPeriod,string"`
+	Status                     string  `json:"status"`
 }
 
-func (ds *EPICSDatasource) GetArchiverChannels(Server string, ManagePort string) ([]string, error, string) {
+func (ds *EPICSDatasource) GetArchiverChannels(Server string, ManagePort string, SingleChannel string) ([]string, []float64, error, string) {
 
 	// Init a container for the raw pv list
-	pvs := make([]pv, 0)
+	pvs := make(GetPVStatus, 0)
 
-	// Generate a URL to query for the channel list
-	getpvurl := fmt.Sprintf("http://%s:%s/mgmt/bpl/getPVStatus", Server, ManagePort)
+	// Generate a URL to query for the channel list, or a single channel if that's what is required
+	var getpvurl string
+	if SingleChannel != "" {
+
+		// URL encode the params for the single channel
+		params := url.Values{}
+		params.Add("pv", SingleChannel)
+
+		getpvurl = fmt.Sprintf("http://%s:%s/mgmt/bpl/getPVStatus?%s", Server, ManagePort, params.Encode())
+
+	} else {
+		getpvurl = fmt.Sprintf("http://%s:%s/mgmt/bpl/getPVStatus", Server, ManagePort)
+	}
 
 	// Give the archiver 30 seconds to reply
 	client := http.Client{Timeout: time.Second * 30}
 
 	httpreq, err := http.NewRequest(http.MethodGet, getpvurl, nil)
 	if err != nil {
-		return []string{}, err, "Failure to create HTTP request: " + err.Error()
+		return []string{}, []float64{}, err, "Failure to create HTTP request: " + err.Error()
 	}
 
 	// Retrieve the PV list
 	res, err := client.Do(httpreq)
 	if err != nil {
-		return []string{}, err, "Failure to GET archiver PV names: " + err.Error()
+		return []string{}, []float64{}, err, "Failure to GET archiver PV names: " + err.Error()
 	}
 
 	// Pull the body out of the response
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return []string{}, err, "Failure to read body from archiver GET request: " + err.Error()
+		return []string{}, []float64{}, err, "Failure to read body from archiver GET request: " + err.Error()
 	}
 
 	// Decode the body into component PVs
 	err = json.Unmarshal(body, &pvs)
 	if err != nil {
-		return []string{}, err, "Failure to unmarshal PV list JSON: " + err.Error()
+		return []string{}, []float64{}, err, "Failure to unmarshal PV list JSON: " + err.Error()
 	}
 
-	// Init a container for just the channel list
+	// Init containers for the channel list and sampling periods
 	channels := make([]string, len(pvs))
+	periods := make([]float64, len(pvs))
 	var i int
 	for i = 0; i < len(pvs); i++ {
 		channels[i] = pvs[i].PvName
+		periods[i] = pvs[i].SamplingPeriod
 	}
 
 	// Return the completed PV list
-	return channels, nil, ""
+	return channels, periods, nil, ""
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.
@@ -448,7 +416,7 @@ func (ds *EPICSDatasource) CheckHealth(ctx context.Context, req *backend.CheckHe
 
 	// Get the channels as a test of the archiver connection
 	var channels []string
-	channels, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort)
+	channels, _, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort, "")
 
 	if err != nil {
 		return &backend.CheckHealthResult{
@@ -520,7 +488,7 @@ func (ds *EPICSDatasource) handleResourceChannels(rw http.ResponseWriter, req *h
 		// Get the channels list fresh from the archiver (again)
 		var allchannels []string
 		var message string
-		allchannels, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort)
+		allchannels, _, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort, "")
 
 		if err != nil {
 			log.DefaultLogger.Error(fl() + "channels retrieve error: " + message)
@@ -549,7 +517,7 @@ func (ds *EPICSDatasource) handleResourceChannels(rw http.ResponseWriter, req *h
 		// Get the channels list fresh from the archiver
 		var channels []string
 		var message string
-		channels, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort)
+		channels, _, err, message = ds.GetArchiverChannels(config.Server, config.ManagePort, "")
 
 		if err != nil {
 			log.DefaultLogger.Error(fl() + "systems retrieve error: " + message)

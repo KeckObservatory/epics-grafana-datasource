@@ -6,11 +6,13 @@ export interface EPICSQuery extends DataQuery {
   channel: string;
   unitConversion: number;
   transform: number;
+  disablebinning: boolean;
 }
 
 export const defaultQuery: Partial<EPICSQuery> = {
   unitConversion: 0,
   transform: 0,
+  disablebinning: false,
 };
 
 /**

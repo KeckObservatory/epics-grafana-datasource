@@ -148,6 +148,7 @@ type queryModel struct {
 	QueryText      string `json:"queryText"`
 	UnitConversion int    `json:"unitConversion"`
 	Transform      int    `json:"transform"`
+	DisableBinning bool   `json:"disablebinning"`
 	IntervalMs     int    `json:"intervalMs"`
 	MaxDataPoints  int    `json:"maxDataPoints"`
 	OrgId          int    `json:"orgId"`
@@ -218,7 +219,9 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 	var sampleRate int64
 
 	// Do our own binning if we have to, for now just return the raw data and let the browser deal with it
-	if binsize < 1 {
+	if qm.DisableBinning {
+		sampleRate = 0
+	} else if binsize < 1 {
 		// TODO - This is where we will bin it ourselves
 		sampleRate = 0
 	} else {

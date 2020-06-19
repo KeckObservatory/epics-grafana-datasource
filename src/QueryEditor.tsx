@@ -1,7 +1,7 @@
 import defaults from 'lodash/defaults';
 
 import React, { PureComponent } from 'react';
-import { InlineFormLabel, SegmentAsync, Select } from '@grafana/ui';
+import { LegacyForms, InlineFormLabel, SegmentAsync, Select } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from './DataSource';
 import { defaultQuery, EPICSDataSourceOptions, EPICSQuery } from './types';
@@ -59,6 +59,15 @@ export class QueryEditor extends PureComponent<Props> {
     onRunQuery();
   };
 
+  toggleDisableBinning = (event?: React.SyntheticEvent<HTMLInputElement>) => {
+    const { query, onChange, onRunQuery } = this.props;
+    onChange({
+      ...query,
+      disablebinning: !query.disablebinning,
+    });
+    onRunQuery();
+  };
+
   render() {
     const datasource = this.props.datasource;
     const query = defaults(this.props.query, defaultQuery);
@@ -67,15 +76,7 @@ export class QueryEditor extends PureComponent<Props> {
     return (
       <>
         <div className="gf-form-inline">
-          <InlineFormLabel
-            width={10}
-            className="query-system"
-            tooltip={
-              <p>
-                Optional: filter by system.
-              </p>
-            }
-          >
+          <InlineFormLabel width={10} className="query-system" tooltip={<p>Optional: filter by system.</p>}>
             Channel name filter
           </InlineFormLabel>
           <SegmentAsync
@@ -86,16 +87,8 @@ export class QueryEditor extends PureComponent<Props> {
             onChange={this.onSystemChange}
           ></SegmentAsync>
         </div>
-        <div className="gf-form-inline">
-          <InlineFormLabel
-            width={10}
-            className="query-channels"
-            tooltip={
-              <p>
-                Select an EPICS channel.
-              </p>
-            }
-          >
+        <div className="gf-form-inline" style={{ marginTop: 8 }}>
+          <InlineFormLabel width={10} className="query-channels" tooltip={<p>Select an EPICS channel.</p>}>
             Channel selection
           </InlineFormLabel>
           <SegmentAsync
@@ -106,7 +99,7 @@ export class QueryEditor extends PureComponent<Props> {
             onChange={this.onChannelChange}
           ></SegmentAsync>
         </div>
-        <div className="gf-form-inline">
+        <div className="gf-form-inline" style={{ marginTop: 8 }}>
           <InlineFormLabel width={10} className="convert-units" tooltip={<p>Convert units.</p>}>
             Units conversion
           </InlineFormLabel>
@@ -120,7 +113,7 @@ export class QueryEditor extends PureComponent<Props> {
             onChange={this.onUnitConversionChange}
           />
         </div>
-        <div className="gf-form-inline">
+        <div className="gf-form-inline" style={{ marginTop: 8 }}>
           <InlineFormLabel width={10} className="transform" tooltip={<p>Transform data.</p>}>
             Transform
           </InlineFormLabel>
@@ -132,6 +125,15 @@ export class QueryEditor extends PureComponent<Props> {
             value={query.transform}
             allowCustomValue={false}
             onChange={this.onTransformChange}
+          />
+        </div>
+        <div className="gf-form-inline" style={{ marginTop: 8 }}>
+          <LegacyForms.Switch
+            label="Disable binning"
+            labelClass={'width-10'}
+            tooltip="Forces the archiver query to return every data point without binning"
+            checked={query.disablebinning === true}
+            onChange={this.toggleDisableBinning}
           />
         </div>
       </>

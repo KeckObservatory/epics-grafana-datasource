@@ -294,16 +294,114 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 	values := make([]float64, count)
 
 	// Temporary variables for conversions/transforms
-	//var timetemp float64
-	//var valtemp, val float64
-	var i int32
+	var val float64
+	var i int
 
 	for _, pvdataset := range pvdata {
 		for _, pvdatarow := range pvdataset.Data {
-			values[i] = pvdatarow.Val
+
+			// If we are doing a unit conversion, perform it now while we have the single value in hand
+			switch qm.UnitConversion {
+
+			case UNIT_CONVERT_NONE:
+				// No conversion, just assign it straight over
+				val = pvdatarow.Val
+
+			case UNIT_CONVERT_DEG_TO_RAD:
+				// RAD = DEG * π/180  (1° = 0.01745rad)
+				val = pvdatarow.Val * (math.Pi / 180)
+
+			case UNIT_CONVERT_RAD_TO_DEG:
+				// DEG = RAD * 180/π  (1rad = 57.296°)
+				val = pvdatarow.Val * (180 / math.Pi)
+
+			case UNIT_CONVERT_RAD_TO_ARCSEC:
+				// ARCSEC = RAD * (3600 * 180)/π  (1rad = 206264.806")
+				val = pvdatarow.Val * (3600 * 180 / math.Pi)
+
+			case UNIT_CONVERT_K_TO_C:
+				// °C = K + 273.15
+				val = pvdatarow.Val + 273.15
+
+			case UNIT_CONVERT_C_TO_K:
+				// K = °C − 273.15
+				val = pvdatarow.Val - 273.15
+
+			default:
+				// Send back an empty frame with an error, we did not understand the conversion
+				response.Frames = append(response.Frames, empty_frame)
+				response.Error = fmt.Errorf("Unknown unit conversion: %d", qm.UnitConversion)
+				return response
+			}
+
+			// Assign to the frame
+			values[i] = val
 			times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
 			i++
 		}
+	}
+
+	// Perform any requested data transforms
+	switch qm.Transform {
+
+	case TRANSFORM_NONE:
+		break
+
+	case TRANSFORM_FIRST_DERIVATVE, TRANSFORM_FIRST_DERIVATVE_1HZ, TRANSFORM_FIRST_DERIVATVE_10HZ, TRANSFORM_FIRST_DERIVATVE_100HZ:
+
+		// Compute the first derivative of the data.
+		dtimes := make([]time.Time, count-1)
+		dvalues := make([]float64, count-1)
+
+		for i = 1; i < count; i++ {
+			// Calculate the dt
+			dtimes[i-1] = times[i]
+
+			// Calculate the dy/dt
+			var dt, dvdt float64
+			dt = (times[i].Sub(times[i-1])).Seconds()
+			dvdt = (values[i] - values[i-1]) / dt
+
+			if qm.Transform == TRANSFORM_FIRST_DERIVATVE_1HZ {
+				dvdt = math.Round(dvdt)
+			} else if qm.Transform == TRANSFORM_FIRST_DERIVATVE_10HZ {
+				dvdt = math.Round(dvdt*10) / 10
+			} else if qm.Transform == TRANSFORM_FIRST_DERIVATVE_100HZ {
+				dvdt = math.Round(dvdt*100) / 100
+			}
+
+			dvalues[i-1] = dvdt
+		}
+
+		// Reassign the original arrays to be the 1st derivative results
+		times = dtimes
+		values = dvalues
+
+	case TRANSFORM_DELTA:
+		// Compute the deltas of the data.  This algorithm replicates what numpy diff() does in Python,
+		// to the extent that it disregards the time series data.  The resultant arrays have one fewer element,
+		// we drop the 0th element of time and value.  It's like a first derivative where dt is always 1.
+		// See https://numpy.org/doc/stable/reference/generated/numpy.diff.html
+		dtimes := make([]time.Time, count-1)
+		dvalues := make([]float64, count-1)
+
+		for i = 1; i < count; i++ {
+			// Bring the time val straight across, shifted by one
+			dtimes[i-1] = times[i]
+
+			// Calculate the dx/dt and assume dt is always 1
+			dvalues[i-1] = values[i] - values[i-1]
+		}
+
+		// Reassign the original arrays to be the new results
+		times = dtimes
+		values = dvalues
+
+	default:
+		// Send back an empty frame with an error, we did not understand the transform
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = fmt.Errorf("Unknown transform: %d", qm.Transform)
+		return response
 	}
 
 	// Start a new frame and add the times + values

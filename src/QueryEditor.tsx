@@ -93,7 +93,7 @@ export class QueryEditor extends PureComponent<Props> {
           </InlineFormLabel>
           <SegmentAsync
             loadOptions={() => datasource.getChannels(query.system)}
-            placeholder=""
+            placeholder="(select a channel)"
             value={query.channel}
             allowCustomValue={false}
             onChange={this.onChannelChange}

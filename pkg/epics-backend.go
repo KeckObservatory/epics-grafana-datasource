@@ -153,6 +153,7 @@ type queryModel struct {
 	MaxDataPoints  int    `json:"maxDataPoints"`
 	OrgId          int    `json:"orgId"`
 	RefId          string `json:"refId"`
+	Hide           bool   `json:"hide"`
 }
 
 // Structure obtained with https://github.com/bashtian/jsonutils
@@ -183,11 +184,16 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 		return response
 	}
 
+	// Return nothing if we are hiding this channel
+	if qm.Hide {
+		return response
+	}
+
 	// Create an empty data frame response and add time dimension
 	empty_frame := data.NewFrame("response")
 	empty_frame.Fields = append(empty_frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
 
-	// Return empty frame if query is empty
+	// Return empty frame query is empty
 	if qm.QueryText == "" {
 
 		// add the frames to the response

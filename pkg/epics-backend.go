@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -280,6 +281,9 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 	// Init a container for the raw data points
 	var pvdata PVData
+
+	// 2020-06-24 PMR: Look for NaN values which will cause the unmarshal below to fail.  Replace with nulls.
+	body = bytes.Replace(body, []byte(": NaN"), []byte(": null"), -1)
 
 	// Decode the body
 	err = json.Unmarshal(body, &pvdata)

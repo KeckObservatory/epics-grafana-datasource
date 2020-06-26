@@ -167,8 +167,8 @@ type PVData []struct {
 		Val      float64 `json:"val"`
 	} `json:"data"`
 	Meta struct {
-		PREC int64  `json:"PREC,string"`
-		Name string `json:"name"`
+		PREC float64 `json:"PREC,string"`
+		Name string  `json:"name"`
 	} `json:"meta"`
 }
 

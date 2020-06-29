@@ -172,6 +172,20 @@ type PVData []struct {
 	} `json:"meta"`
 }
 
+type PVStringData []struct {
+	Data []struct {
+		Nanos    int64  `json:"nanos"`
+		Secs     int64  `json:"secs"`
+		Severity int64  `json:"severity"`
+		Status   int64  `json:"status"`
+		Val      string `json:"val"`
+	} `json:"data"`
+	Meta struct {
+		PREC float64 `json:"PREC,string"`
+		Name string  `json:"name"`
+	} `json:"meta"`
+}
+
 func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, server string, manageport string, dataport string) backend.DataResponse {
 
 	// Unmarshal the json into our queryModel
@@ -281,17 +295,64 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 	// Init a container for the raw data points
 	var pvdata PVData
+	var pvsdata PVStringData
 
 	// 2020-06-24 PMR: Look for NaN values which will cause the unmarshal below to fail.  Replace with nulls.
 	body = bytes.Replace(body, []byte(": NaN"), []byte(": null"), -1)
 
-	// Decode the body
-	err = json.Unmarshal(body, &pvdata)
-	if err != nil {
-		// Send back an empty frame, the query failed in some way
-		response.Frames = append(response.Frames, empty_frame)
-		response.Error = err
-		return response
+	// Try to unmarshal as floats, this is the vast majority of cases
+	if err := json.Unmarshal(body, &pvdata); err != nil {
+
+		// If that didn't work, unmarshal as strings
+		if _, ok := err.(*json.UnmarshalTypeError); ok {
+
+			err := json.Unmarshal(body, &pvsdata)
+			if err != nil {
+				// Send back an empty frame, couldn't make strings out of it, either
+				response.Frames = append(response.Frames, empty_frame)
+				response.Error = err
+				return response
+			}
+
+			// If it worked as strings, we can't do much other than just ship them back up as-is, no transforms
+			// Determine how many strings came back
+			var count int
+			for _, pvsdataset := range pvsdata {
+				count += len(pvsdataset.Data)
+			}
+
+			// Store times and values here before building the response
+			times := make([]time.Time, count)
+			values := make([]string, count)
+
+			var i int
+			for _, pvsdataset := range pvsdata {
+				for _, pvsdatarow := range pvsdataset.Data {
+
+					// Assign to the frame
+					values[i] = pvsdatarow.Val
+					times[i] = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos))
+					i++
+				}
+			}
+
+			// Start a new frame and add the times + values
+			frame := data.NewFrame("response")
+			frame.RefID = qm.RefId
+			frame.Name = qm.QueryText
+			frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
+			frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+
+			// add the frames to the response
+			response.Frames = append(response.Frames, frame)
+			return response
+
+		} else {
+			// Send back an empty frame, it wasn't a unmarshal type error
+			response.Frames = append(response.Frames, empty_frame)
+			response.Error = err
+			return response
+		}
 	}
 
 	// Determine how many points came back

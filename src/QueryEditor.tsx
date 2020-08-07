@@ -36,6 +36,8 @@ export class QueryEditor extends PureComponent<Props> {
     { label: 'radians to arcseconds', value: 3 },
     { label: 'Kelvin to Celcius', value: 4 },
     { label: 'Celcius to Kelvin', value: 5 },
+    { label: 'Farenheight to Celcius', value: 6 },
+    { label: 'Celcius to Farenheight', value: 7 },
   ];
 
   onUnitConversionChange = (item: any) => {
@@ -51,6 +53,7 @@ export class QueryEditor extends PureComponent<Props> {
     { label: '1st derivative (10Hz rounding)', value: 3 },
     { label: '1st derivative (100Hz rounding)', value: 4 },
     { label: 'delta', value: 5 },
+    { label: 'truncate fractional seconds', value: 6 },
   ];
 
   onTransformChange = (item: any) => {

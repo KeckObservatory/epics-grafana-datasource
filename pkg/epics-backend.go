@@ -53,6 +53,8 @@ const (
 	UNIT_CONVERT_RAD_TO_ARCSEC = iota
 	UNIT_CONVERT_K_TO_C        = iota
 	UNIT_CONVERT_C_TO_K        = iota
+	UNIT_CONVERT_F_TO_C        = iota
+	UNIT_CONVERT_C_TO_F        = iota
 )
 
 // Define the data transforms, this maps onto the transformOptions list in QueryEditor.tsx
@@ -63,6 +65,7 @@ const (
 	TRANSFORM_FIRST_DERIVATVE_10HZ  = iota
 	TRANSFORM_FIRST_DERIVATVE_100HZ = iota
 	TRANSFORM_DELTA                 = iota
+	TRANSFORM_TRUNCATE_FRAC_SECS    = iota
 )
 
 // LoadSettings gets the relevant settings from the plugin context
@@ -331,7 +334,15 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 					// Assign to the frame
 					values[i] = pvsdatarow.Val
-					times[i] = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos))
+
+					// One of the transforms is to remove the fractional seconds from the timestamps.  Used when computing
+					// differences between two channels.  This will force the timestamps to line up.  Only works well with
+					// 1Hz data or slower.
+					if qm.Transform == TRANSFORM_TRUNCATE_FRAC_SECS {
+						times[i] = time.Unix(int64(pvsdatarow.Secs), 0)
+					} else {
+						times[i] = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos))
+					}
 					i++
 				}
 			}
@@ -401,6 +412,14 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 				// K = °C − 273.15
 				val = pvdatarow.Val - 273.15
 
+			case UNIT_CONVERT_F_TO_C:
+				// °C = (°F − 32) × 5⁄9
+				val = (pvdatarow.Val - 32) * 5 / 9
+
+			case UNIT_CONVERT_C_TO_F:
+				// °F = (°C * 9/5) + 32
+				val = (pvdatarow.Val * 9 / 5) + 32
+
 			default:
 				// Send back an empty frame with an error, we did not understand the conversion
 				response.Frames = append(response.Frames, empty_frame)
@@ -410,7 +429,16 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 
 			// Assign to the frame
 			values[i] = val
-			times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
+
+			// One of the transforms is to remove the fractional seconds from the timestamps.  Used when computing
+			// differences between two channels.  This will force the timestamps to line up.  Only works well with
+			// 1Hz data or slower.
+			if qm.Transform == TRANSFORM_TRUNCATE_FRAC_SECS {
+				times[i] = time.Unix(int64(pvdatarow.Secs), 0)
+			} else {
+				times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
+			}
+
 			i++
 		}
 	}
@@ -471,6 +499,10 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 		times = dtimes
 		values = dvalues
 
+	case TRANSFORM_TRUNCATE_FRAC_SECS:
+		// Nothing to do here, this would have been handled up above when the nanoseconds were dropped in the time creation
+		break
+
 	default:
 		// Send back an empty frame with an error, we did not understand the transform
 		response.Frames = append(response.Frames, empty_frame)
@@ -487,8 +519,8 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 	// .Name field above (thus creating a series named "service.KEYWORD values" which may not be the desired
 	// name for the series.  Thus, submit it with an empty string for now which appears to work.
 	//frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
-	frame.Fields = append(frame.Fields, data.NewField("", nil, values))
-	frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
+	frame.Fields = append(frame.Fields, data.NewField("Value", nil, values))
+	frame.Fields = append(frame.Fields, data.NewField("Time", nil, times))
 
 	// add the frames to the response
 	response.Frames = append(response.Frames, frame)

@@ -38,6 +38,8 @@ export class QueryEditor extends PureComponent<Props> {
     { label: 'Celcius to Kelvin', value: 5 },
     { label: 'Farenheight to Celcius', value: 6 },
     { label: 'Celcius to Farenheight', value: 7 },
+    { label: 'meters/second to miles/hour', value: 8 },
+    { label: 'miles/hour to meters/second', value: 9 },
   ];
 
   onUnitConversionChange = (item: any) => {

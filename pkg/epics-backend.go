@@ -55,6 +55,8 @@ const (
 	UNIT_CONVERT_C_TO_K        = iota
 	UNIT_CONVERT_F_TO_C        = iota
 	UNIT_CONVERT_C_TO_F        = iota
+	UNIT_CONVERT_MPS_TO_MPH    = iota
+	UNIT_CONVERT_MPH_TO_MPS    = iota
 )
 
 // Define the data transforms, this maps onto the transformOptions list in QueryEditor.tsx
@@ -419,6 +421,14 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 			case UNIT_CONVERT_C_TO_F:
 				// °F = (°C * 9/5) + 32
 				val = (pvdatarow.Val * 9 / 5) + 32
+
+			case UNIT_CONVERT_MPS_TO_MPH:
+				//  mph = m/s * 2.237
+				val = pvdatarow.Val * 2.237
+
+			case UNIT_CONVERT_MPH_TO_MPS:
+				// m/s = mph / 2.237
+				val = pvdatarow.Val / 2.237
 
 			default:
 				// Send back an empty frame with an error, we did not understand the conversion

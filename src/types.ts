@@ -7,6 +7,7 @@ export interface EPICSQuery extends DataQuery {
   unitConversion: number;
   transform: number;
   disablebinning: boolean;
+  timeoffset: string;
 }
 
 export const defaultQuery: Partial<EPICSQuery> = {
@@ -14,6 +15,7 @@ export const defaultQuery: Partial<EPICSQuery> = {
   transform: 0,
   disablebinning: false,
 };
+//  timeoffset: '',
 
 /**
  * These are options configured for each DataSource instance

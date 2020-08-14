@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -155,6 +156,7 @@ type queryModel struct {
 	UnitConversion int    `json:"unitConversion"`
 	Transform      int    `json:"transform"`
 	DisableBinning bool   `json:"disablebinning"`
+	TimeOffset     string `json:"timeoffset"`
 	IntervalMs     int    `json:"intervalMs"`
 	MaxDataPoints  int    `json:"maxDataPoints"`
 	OrgId          int    `json:"orgId"`
@@ -345,6 +347,18 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 					} else {
 						times[i] = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos))
 					}
+
+					// Support adding an offset to the time value
+					if len(qm.TimeOffset) > 0 {
+						var offset float64
+						offset, err = strconv.ParseFloat(qm.TimeOffset, 64)
+
+						var t = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos)).Add(time.Second * time.Duration(offset))
+						times[i] = t
+					} else {
+						times[i] = time.Unix(int64(pvsdatarow.Secs), int64(pvsdatarow.Nanos))
+					}
+
 					i++
 				}
 			}
@@ -445,6 +459,16 @@ func (ds *EPICSDatasource) query(ctx context.Context, query backend.DataQuery, s
 			// 1Hz data or slower.
 			if qm.Transform == TRANSFORM_TRUNCATE_FRAC_SECS {
 				times[i] = time.Unix(int64(pvdatarow.Secs), 0)
+			} else {
+				times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
+			}
+
+			// Support adding an offset to the time value
+			if len(qm.TimeOffset) > 0 {
+				var offset float64
+				offset, err = strconv.ParseFloat(qm.TimeOffset, 64)
+
+				times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos)).Add(time.Second * time.Duration(offset))
 			} else {
 				times[i] = time.Unix(int64(pvdatarow.Secs), int64(pvdatarow.Nanos))
 			}

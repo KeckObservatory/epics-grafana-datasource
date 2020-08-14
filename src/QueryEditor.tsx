@@ -1,7 +1,7 @@
 import defaults from 'lodash/defaults';
 
-import React, { PureComponent } from 'react';
-import { LegacyForms, InlineFormLabel, SegmentAsync, Select } from '@grafana/ui';
+import React, { PureComponent, ChangeEvent } from 'react';
+import { LegacyForms, InlineFormLabel, SegmentAsync, Select, Input } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from './DataSource';
 import { defaultQuery, EPICSDataSourceOptions, EPICSQuery } from './types';
@@ -73,6 +73,14 @@ export class QueryEditor extends PureComponent<Props> {
     onRunQuery();
   };
 
+  onTimeOffsetChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onChange, query, onRunQuery } = this.props;
+
+    //alert(event.target.value);
+    onChange({ ...query, timeoffset: event.target.value });
+    onRunQuery();
+  };
+
   render() {
     const datasource = this.props.datasource;
     const query = defaults(this.props.query, defaultQuery);
@@ -140,6 +148,23 @@ export class QueryEditor extends PureComponent<Props> {
             checked={query.disablebinning === true}
             onChange={this.toggleDisableBinning}
           />
+        </div>
+        <div className="gf-form-group">
+          <div className="gf-form-inline">
+            <div className="gf-form">
+              <InlineFormLabel className="set-timeoffset" tooltip="Adds a time offset, in seconds, to the Time field.">
+                Time offset (s)
+              </InlineFormLabel>
+              <div className="width-10">
+                <Input
+                  className="width-10"
+                  placeholder="0"
+                  value={query.timeoffset}
+                  onChange={this.onTimeOffsetChange}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </>
     );

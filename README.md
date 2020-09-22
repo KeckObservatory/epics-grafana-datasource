@@ -2,6 +2,9 @@
 
 This backend plugin provides a Grafana connection to the [SLAC EPICS archiver appliance](https://github.com/slacmshankar/epicsarchiverap).
 
+The plugin was written by Paul Richards (prichards@keck.hawaii.edu) based on the Grafana backend plugin SDK, in a mixture of Go and Typescript.  It is in regular use at the Keck Observatory with Grafana 7.1, and is periodically enhanced for our data analysis needs.  
+
+
 ### Building
 
 Installation on a Fedora/CentOS system should be similar to other Linux installs.  This is not an exhaustive list of steps, your install will vary.

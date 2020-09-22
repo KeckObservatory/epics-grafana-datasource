@@ -20,7 +20,7 @@ curl -sL https://dl.yarnpkg.com/rpm/yarn.repo | tee /etc/yum.repos.d/yarn.repo
 yum install -y yarn
 ```
 
-- Clone this git repos to your plugins directory.
+- Clone this git repo to your plugins directory.
 
 - Get the SDK plugin for Go.
 ```BASH
@@ -39,12 +39,13 @@ mage -v
 yarn build
 mage -v
 ```
+- Link the plugin to your Grafana installation (this will vary based on where yours is installed).
 
-- Allow loading of unsigned plugins in Grafana.
+- Allow loading of unsigned plugins in Grafana.  Your grafana.ini may be elsewhere.
 ```BASH
 vi /etc/grafana/grafana.ini
 # Enter a comma-separated list of plugin identifiers to identify plugins that are allowed to be loaded even if they lack a valid signature. 
-allow_loading_unsigned_plugins = keck-observatory-keyword-grafana-datasource,keck-observatory-epics-grafana-datasource
+allow_loading_unsigned_plugins = keck-observatory-epics-grafana-datasource
 ```
 
 - Restart Grafana to pick up the plugin.

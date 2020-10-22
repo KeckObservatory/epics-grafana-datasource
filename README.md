@@ -39,6 +39,7 @@ mage -v
 
 - Build the plugin
 ```BASH
+yarn install --ignore-engines
 yarn build
 mage -v
 ```

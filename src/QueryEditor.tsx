@@ -118,6 +118,7 @@ export class QueryEditor extends PureComponent<Props> {
           </InlineFormLabel>
           <Select
             width={30}
+            menuPlacement="bottom"
             placeholder={'(none)'}
             defaultValue={0}
             options={this.unitConversionOptions}
@@ -132,6 +133,7 @@ export class QueryEditor extends PureComponent<Props> {
           </InlineFormLabel>
           <Select
             width={30}
+            menuPlacement="bottom"
             placeholder={'(none)'}
             defaultValue={0}
             options={this.transformOptions}

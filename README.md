@@ -1,65 +1,97 @@
-# Grafana Data Source Backend Plugin Template
+```
+# Clean install of Ubuntu Server 24.04
+apt install ubuntu-desktop
+systemctl disable systemd-networkd.service
 
-test 123
-test 456
-test 789
+# Grafana
+apt install -y adduser libfontconfig1 musl
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_11.4.0_amd64.deb
+dpkg -i grafana-enterprise_11.4.0_amd64.deb
 
-[![CircleCI](https://circleci.com/gh/grafana/simple-datasource-backend/tree/master.svg?style=svg)](https://circleci.com/gh/grafana/simple-datasource-backend/tree/master)
+systemctl daemon-reload
+systemctl enable grafana-server
+systemctl start grafana-server
 
-This template is a starting point for building Grafana Data Source Backend Plugins
+# verify Grafana is running, check http://localhost:3000
 
-## What is Grafana Data Source Backend Plugin?
+systemctl stop grafana-server
 
-Grafana supports a wide range of data sources, including Prometheus, MySQL, and even Datadog. There’s a good chance you can already visualize metrics from the systems you have set up. In some cases, though, you already have an in-house metrics solution that you’d like to add to your Grafana dashboards. Grafana Data Source Plugins enables integrating such solutions with Grafana.
+# ---------
+# setup grafana user
+chsh grafana
+# /bin/bash
+chown -R grafana /usr/share/grafana
 
-For more information about backend plugins, refer to the documentation on [Backend plugins](https://grafana.com/docs/grafana/latest/developers/plugins/backend/).
 
-## Getting started
+# ----------
+# Install Go
+wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
 
-A data source backend plugin consists of both frontend and backend components.
+# Add to /etc/profile
+export PATH=$PATH:/usr/local/go/bin
 
-### Frontend
+# Add to ~/.profile
+export PATH=$PATH:/usr/local/go/bin:~/go/bin
 
-1. Install dependencies
-```BASH
-yarn install
+# Test
+go version
+
+
+# ----------
+# Install Node
+# installs nvm (Node Version Manager)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+
+# download and install Node.js (you may need to restart the terminal)
+nvm install 23
+
+# verifies the right Node.js version is in the environment
+node -v # should print `v23.4.0`
+
+# verifies the right npm version is in the environment
+npm -v # should print `10.9.2`
+
+
+# ----------
+# Install Mage
+go install github.com/magefile/mage@latest
+mage -init
+
+
+# ----------
+su - grafana
+mkdir /var/lib/grafana/plugins
+cd /var/lib/grafana/plugins
+git clone https://github.com/KeckObservatory/keyword-grafana-datasource
+
+# Build keyword datasource
+cd /var/lib/grafana/plugins/keyword-grafana-datasource
+npm install
+npm run typecheck
+npm run dev
+# hit Ctrl-C once the screen stops updating
+
+go get github.com/lib/pq
+mage -v build:linux
+
+# Modify Grafana to see plugin
+vi /etc/grafana/grafana.ini
+
+# locate this line:
+;allow_loading_unsigned_plugins
+# change it to:
+allow_loading_unsigned_plugins = keyword-grafana-datasource
+
+(as root)
+systemctl restart grafana-server
 ```
 
-2. Build plugin in development mode or run in watch mode
-```BASH
-yarn dev
-```
-or
-```BASH
-yarn watch
-```
-3. Build plugin in production mode
-```BASH
-yarn build
-```
-
-### Backend
-
-1. Update [Grafana plugin SDK for Go](https://grafana.com/docs/grafana/latest/developers/plugins/backend/grafana-plugin-sdk-for-go/) dependency to the latest minor version:
-
-```bash
-go get -u github.com/grafana/grafana-plugin-sdk-go
-```
-
-2. Build backend plugin binaries for Linux, Windows and Darwin:
-```BASH
-mage -v
-```
-
-3. List all available Mage targets for additional commands:
-```BASH
-mage -l
-```
 
 ## Learn more
 
-- [Build a data source backend plugin tutorial](https://grafana.com/tutorials/build-a-data-source-backend-plugin)
-- [Grafana documentation](https://grafana.com/docs/)
-- [Grafana Tutorials](https://grafana.com/tutorials/) - Grafana Tutorials are step-by-step guides that help you make the most of Grafana
-- [Grafana UI Library](https://developers.grafana.com/ui) - UI components to help you build interfaces using Grafana Design System
-- [Grafana plugin SDK for Go](https://grafana.com/docs/grafana/latest/developers/plugins/backend/grafana-plugin-sdk-for-go/)
+Below you can find source code for existing app plugins and other related documentation.
+
+- [Basic data source plugin example](https://github.com/grafana/grafana-plugin-examples/tree/master/examples/datasource-basic#readme)
+- [`plugin.json` documentation](https://grafana.com/developers/plugin-tools/reference/plugin-json)
+- [How to sign a plugin?](https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin)

@@ -1,56 +1,65 @@
-# EPICS Archiver Appliance Grafana Data Source Backend
+# Grafana Data Source Backend Plugin Template
 
-This backend plugin provides a Grafana connection to the [SLAC EPICS archiver appliance](https://github.com/slacmshankar/epicsarchiverap).
+test 123
+test 456
+test 789
 
-The plugin was written by Paul Richards (prichards@keck.hawaii.edu) based on the Grafana backend plugin SDK, in a mixture of Go and Typescript.  It is in regular use at the Keck Observatory with Grafana 7.1, and is periodically enhanced for our data analysis needs.  
+[![CircleCI](https://circleci.com/gh/grafana/simple-datasource-backend/tree/master.svg?style=svg)](https://circleci.com/gh/grafana/simple-datasource-backend/tree/master)
 
+This template is a starting point for building Grafana Data Source Backend Plugins
 
-### Building
+## What is Grafana Data Source Backend Plugin?
 
-Installation on a Fedora/CentOS system should be similar to other Linux installs.  This is not an exhaustive list of steps, your install will vary.
+Grafana supports a wide range of data sources, including Prometheus, MySQL, and even Datadog. There’s a good chance you can already visualize metrics from the systems you have set up. In some cases, though, you already have an in-house metrics solution that you’d like to add to your Grafana dashboards. Grafana Data Source Plugins enables integrating such solutions with Grafana.
 
-- Install [Grafana 7](https://grafana.com/docs/grafana/latest/installation/rpm/).
+For more information about backend plugins, refer to the documentation on [Backend plugins](https://grafana.com/docs/grafana/latest/developers/plugins/backend/).
 
-- Install [Go](https://golang.org/doc/install).
+## Getting started
 
-- Install node and yarn.
+A data source backend plugin consists of both frontend and backend components.
+
+### Frontend
+
+1. Install dependencies
 ```BASH
-curl -sL https://rpm.nodesource.com/setup_14.x | sudo bash -
-yum makecache
-yum install -y nodejs
-
-curl -sL https://dl.yarnpkg.com/rpm/yarn.repo | tee /etc/yum.repos.d/yarn.repo
-yum install -y yarn
+yarn install
 ```
 
-- Clone this git repo to your plugins directory.
-
-- Get the SDK plugin for Go.
+2. Build plugin in development mode or run in watch mode
 ```BASH
+yarn dev
+```
+or
+```BASH
+yarn watch
+```
+3. Build plugin in production mode
+```BASH
+yarn build
+```
+
+### Backend
+
+1. Update [Grafana plugin SDK for Go](https://grafana.com/docs/grafana/latest/developers/plugins/backend/grafana-plugin-sdk-for-go/) dependency to the latest minor version:
+
+```bash
 go get -u github.com/grafana/grafana-plugin-sdk-go
 ```
 
-- Clone mage into the plugin.
+2. Build backend plugin binaries for Linux, Windows and Darwin:
 ```BASH
-git clone https://github.com/magefile/mage
-cd mage ; go run bootstrap.go ; cd ..
 mage -v
 ```
 
-- Build the plugin
+3. List all available Mage targets for additional commands:
 ```BASH
-yarn install --ignore-engines
-yarn build
-mage -v
-```
-- Link the plugin to your Grafana installation (this will vary based on where yours is installed).
-
-- Allow loading of unsigned plugins in Grafana.  Your grafana.ini may be elsewhere.
-```BASH
-vi /etc/grafana/grafana.ini
-# Enter a comma-separated list of plugin identifiers to identify plugins that are allowed to be loaded even if they lack a valid signature. 
-allow_loading_unsigned_plugins = keck-observatory-epics-grafana-datasource
+mage -l
 ```
 
-- Restart Grafana to pick up the plugin.
+## Learn more
 
+- [Build a data source backend plugin tutorial](https://grafana.com/tutorials/build-a-data-source-backend-plugin)
+- [Grafana documentation](https://grafana.com/docs/)
+- [Grafana Tutorials](https://grafana.com/tutorials/) - Grafana Tutorials are step-by-step guides that help you make the most of Grafana
+- [Grafana UI Library](https://developers.grafana.com/ui) - UI components to help you build interfaces using Grafana Design System
+- [Grafana plugin SDK for Go](https://grafana.com/docs/grafana/latest/developers/plugins/backend/grafana-plugin-sdk-for-go/)
